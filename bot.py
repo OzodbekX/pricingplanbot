@@ -1,5 +1,7 @@
 import logging
 from typing import Optional
+from datetime import datetime
+import re
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
@@ -20,6 +22,7 @@ TEXTS = {
         "welcome": "Добро пожаловать! Выберите опцию:",
         "main_menu": "Главное меню",
         "tariffs": "Тарифы",
+        "tariff": "Тариф",
         "cinerama": "Cinerama",
         "connect": "Подключить",
         "language": "Язык",
@@ -35,13 +38,23 @@ TEXTS = {
         "speed": "Мбит/с",
         "yourSelectedTariff": "Ваш выбранный тариф:",
         "pleaseEnterYourName": "Введите Ваше имя:",
-        "submit": "подавать",
+        "submit": "Подавать",
+        "proccesCanceled": "Процесс отменен",
+        "proccesCanceledSelectTariff": "Давайте начнем заново. Пожалуйста, выберите тариф.",
+        "youRequestSentSuccessfuly": "Ваша информация успешно отправлена!",
+        "powEnterPhone":"Спасибо! Теперь введите свой номер телефона:",
+        "phone":"Телефон",
+        "validatePhone":"Пожалуйста, введите действительный номер телефона",
+        "yourDetails":"Спасибо! Вот ваши данные",
+        "ifEveryThingCorrect":"Если все верно, нажмите «Подать» для подтверждения или «Отменить», чтобы начать заново.",
+        "name":"Имя"
 
     },
     "uz": {
         "welcome": "Xush kelibsiz! Iltimos, birini tanlang:",
         "main_menu": "Asosiy menyu",
         "tariffs": "Tariflar",
+        "tariff": "arif",
         "cinerama": "Cinerama",
         "connect": "Ulanish",
         "language": "Til",
@@ -57,7 +70,24 @@ TEXTS = {
         "speed": "MBit/s",
         "yourSelectedTariff": "Siz tanlagan tarif:",
         "pleaseEnterYourName": "Iltimos, ismingizni kiriting:",
-        "submit": "yuborish",
+        "submit": "Yuborish",
+        "proccesCanceled": "Jarayon bekor qilindi",
+        "proccesCanceledSelectTariff": "Yana boshlaylik. Iltimos, tarifni tanlang.",
+        "youRequestSentSuccessfuly": "Ma'lumotlaringiz muvaffaqiyatli yuborildi!",
+        "powEnterPhone":"Rahmat! Iltimos telefon nomeringizni kiriting:",
+        "phone":"Telefon",
+        "validatePhone":"Iltimos telefon raqamini to'g'ri kiriting",
+        "yourDetails":"Rahmat! Mana sizning tafsilotlaringiz",
+        "ifEveryThingCorrect":"Agar ma'lumotlar to'gri bo'lsa «Yuborish» tugmasini bosing aks holda «Bekor qilish» tugmasini bosing.",
+                "name":"Ism"
+
+
+
+
+
+
+
+
 
     }
 }
@@ -84,7 +114,7 @@ def get_text(context: ContextTypes.DEFAULT_TYPE, key: str) -> str:
     return TEXTS[lang].get(key, key)
 
 
-async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     keyboard = [
         [InlineKeyboardButton(get_text(context, "tariffs"), callback_data="tariffs")],
         [InlineKeyboardButton(get_text(context, "cinerama"), callback_data="cinerama")],
@@ -96,12 +126,20 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(get_text(context, "welcome"), reply_markup=reply_markup)
     else:
         await update.callback_query.edit_message_text(get_text(context, "welcome"), reply_markup=reply_markup)
+    return SELECT_TARIFF
+
+
 
 
 # Start command handler
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['language'] = context.user_data.get("language", "ru")
+    context.user_data['chat_id'] = update.message.chat.id 
     await show_main_menu(update, context)
+    raise ApplicationHandlerStop()
+
+
+
 
 
 # Language selection handler
@@ -160,43 +198,71 @@ async def select_tariff(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 # Handler for entering name
 async def enter_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data['name'] = update.message.text
-    keyboard = [[InlineKeyboardButton(get_text(context, 'cancel'), callback_data='cancel')]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Thank you! Now, please enter your phone number:", reply_markup=reply_markup)
-
-    return ENTER_PHONE
+    user_name=update.message.text
+    if len(user_name)>0:
+        context.user_data['name'] = update.message.text
+        keyboard = [[InlineKeyboardButton(get_text(context, 'cancel'), callback_data='cancel')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(get_text(context,"powEnterPhone"), reply_markup=reply_markup)
+        return ENTER_PHONE
+    else:
+        await query.edit_message_text(
+        f"{get_text(context, 'yourSelectedTariff')} {name}. {get_text(context, 'pleaseEnterYourName')}",
+        reply_markup=reply_markup)
+        return ENTER_NAME
 
 
 # Handler for entering phone number
 async def enter_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data['phone'] = update.message.text
-    # Confirm details
-    tariff = context.user_data['tariff']
-    name = context.user_data['name']
-    phone = context.user_data['phone']
-    keyboard = [
-        [InlineKeyboardButton(get_text(context, "submit"), callback_data="submit")],
-        [InlineKeyboardButton(get_text(context, "cancel"), callback_data="cancel")],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    # await update.callback_query.edit_message_text("Please confirm your details.", reply_markup=reply_markup)
+    phone=update.message.text
+    if validate_phone_number(phone):
+        context.user_data['phone'] = update.message.text
+        # Confirm details
+        tariff = context.user_data['tariff']
+        name = context.user_data['name']
+        phone = context.user_data['phone']
+        keyboard = [
+                [InlineKeyboardButton(get_text(context, "submit"), callback_data="submit")],
+                [InlineKeyboardButton(get_text(context, "cancel"), callback_data="cancel")],
+                ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        # await update.callback_query.edit_message_text("Please confirm your details.", reply_markup=reply_markup)
+        tariff_index = tariff.split("_")[1]
+        tariffName = TARIFFS_INFO[int(tariff_index)].get("name")
+        await update.message.reply_text(
+               f"{get_text(context,"yourDetails")}:\n"
+               f"{get_text(context,"tariff")}: {tariffName}\n"
+               f"{get_text(context,"name")}: {name}\n"
+               f"{get_text(context,"phone")}: {phone}\n"
+               f"{get_text(context,"ifEveryThingCorrect")}",
+               reply_markup=reply_markup
+               )
+        return CONFIRM_DETAILS
+    else:
+        await update.message.reply_text(get_text(context,"validatePhone"), reply_markup=reply_markup)
+        return ENTER_PHONE
 
-    await update.message.reply_text(
-        f"Thank you! Here are your details:\n"
-        f"Tariff: {tariff}\nName: {name}\nPhone: {phone}\n"
-        f"If everything is correct, press {get_text(context, "submit")} to confirm or {get_text(context, "cancel")} to start over.",
-        reply_markup=reply_markup
-    )
-
-    return CONFIRM_DETAILS
 
 
 # Handler for confirmation
 async def confirm_details(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query.data
     if query == 'submit':
-        await update.callback_query.message.reply_text("Your information has been submitted successfully!")
+        name = context.user_data.get("name")
+        phone = context.user_data.get("phone")
+        tariff = context.user_data['tariff']
+        tariff_index = tariff.split("_")[1]
+        tariffName = TARIFFS_INFO[int(tariff_index)].get("name")        
+        group_chat_id = "@connection_requests_from_bot"  # Используйте имя группы (например, @mygroupname) или числовой ID группы
+        lang_code=context.user_data["language"]
+        current_time = datetime.now().strftime("%d.%m.%Y %H:%M")
+        message = f"Дата подачи заявления: {current_time}\n\n" \
+                  f"Имя: {name}\n" \
+                  f"Телефон: {phone}\n" \
+                  f"Язык: {lang_code}\n" \
+                  f"Тариф: {tariffName}"  
+        await update._bot.send_message(chat_id=group_chat_id, text=message)  
+        await update.callback_query.message.reply_text(get_text(context,"youRequestSentSuccessfuly"))
         return ConversationHandler.END
 
         # Perform HTTP request to the server
@@ -210,15 +276,21 @@ async def confirm_details(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         #                 "Failed to submit your information. Please try again.")
         #             return SELECT_TARIFF
     elif query == 'cancel':
-        await update.callback_query.message.reply_text("Let's start over. Please choose a tariff.")
+        await update.callback_query.message.reply_text(get_text(context,proccesCanceledSelectTariff))
         return SELECT_TARIFF
 
 
 # Cancel handler to exit the conversation
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Process canceled.", reply_markup=ReplyKeyboardRemove())
-    return ConversationHandler.END
+    await update.message.reply_text(get_text(context, "proccesCanceled"), reply_markup=ReplyKeyboardRemove())
+    return SELECT_TARIFF
 
+def validate_phone_number(phone: str) -> bool:
+    # Regular expression pattern for validating the phone number
+    pattern = r"^\+?9989\d{8}$"
+    
+    # Use re.match() to check if the phone number matches the pattern
+    return bool(re.match(pattern, phone))
 
 async def redirect_to_cinerama(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # Create an inline keyboard button with the URL
@@ -240,6 +312,7 @@ def handle_update():
     application.add_handler(CallbackQueryHandler(language_menu, pattern="^language$"))
     application.add_handler(CallbackQueryHandler(set_language, pattern="^lang_"))
     application.add_handler(CallbackQueryHandler(redirect_to_cinerama, pattern="^cinerama"))
+    application.add_handler(CallbackQueryHandler(confirm_details, pattern="^submit"))
     conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(tariffs_menu, pattern="^tariffs")],
         states={
@@ -248,7 +321,9 @@ def handle_update():
             ENTER_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, enter_phone)],
             CONFIRM_DETAILS: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_details)],
         },
+    
         fallbacks=[CommandHandler("cancel", cancel)],
+        allow_reentry=True
     )
 
     application.add_handler(conv_handler)
