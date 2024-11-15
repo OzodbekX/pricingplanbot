@@ -2,6 +2,7 @@ import logging
 from typing import Optional
 from datetime import datetime
 import re
+from telegram import Bot
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
@@ -42,12 +43,15 @@ TEXTS = {
         "proccesCanceled": "Процесс отменен",
         "proccesCanceledSelectTariff": "Давайте начнем заново. Пожалуйста, выберите тариф.",
         "youRequestSentSuccessfuly": "Ваша информация успешно отправлена!",
-        "powEnterPhone":"Спасибо! Теперь введите свой номер телефона:",
+        "powEnterPhone":"Спасибо! Теперь введите ваш номер телефона в этом формате:+9989########:",
         "phone":"Телефон",
         "validatePhone":"Пожалуйста, введите действительный номер телефона",
         "yourDetails":"Спасибо! Вот ваши данные",
         "ifEveryThingCorrect":"Если все верно, нажмите «Подать» для подтверждения или «Отменить», чтобы начать заново.",
-        "name":"Имя"
+        "name":"Имя",
+        "devices":"Устройства",
+        "daySpeed":"Скорость с 12:00 до 00:00",
+        "nightSpeed":"Скорость с 00:00 до 12:00"
 
     },
     "uz": {
@@ -74,20 +78,15 @@ TEXTS = {
         "proccesCanceled": "Jarayon bekor qilindi",
         "proccesCanceledSelectTariff": "Yana boshlaylik. Iltimos, tarifni tanlang.",
         "youRequestSentSuccessfuly": "Ma'lumotlaringiz muvaffaqiyatli yuborildi!",
-        "powEnterPhone":"Rahmat! Iltimos telefon nomeringizni kiriting:",
+        "powEnterPhone":"Rahmat! Endi telefon raqamingizni quyidagi formatda kiriting:+9989########:",
         "phone":"Telefon",
         "validatePhone":"Iltimos telefon raqamini to'g'ri kiriting",
         "yourDetails":"Rahmat! Mana sizning tafsilotlaringiz",
         "ifEveryThingCorrect":"Agar ma'lumotlar to'gri bo'lsa «Yuborish» tugmasini bosing aks holda «Bekor qilish» tugmasini bosing.",
-                "name":"Ism"
-
-
-
-
-
-
-
-
+        "name":"Ism",
+        "devices":"Qurilmalar",
+        "daySpeed":"Tezlik 12:00 dan 00:00 gacha",
+        "nightSpeed":"Скорость с 00:00 до 12:00"
 
     }
 }
@@ -98,9 +97,27 @@ SELECT_TARIFF, ENTER_NAME, ENTER_PHONE, CONFIRM_DETAILS = range(4)
 logging.basicConfig(level=logging.INFO)
 
 TARIFFS_INFO = [
-    {"name": "Тезкор", "price": "185,000", "speed": "100"},
-    {"name": "Барқарор", "price": "125,000", "speed": "80"},
-    {"name": "Чексиз", "price": "200,000", "speed": "100"},
+    {
+        "name": "Tezkor",
+        "price": "185,000",
+        "speed": "80",
+        "night_speed": "100",
+        "device_count": "11-12"
+    },
+    {
+        "name": "Barqaror",
+        "price": "125,000",
+        "speed": "30 Mbps",
+        "night_speed": "100",
+        "device_count": "6-8"
+    },
+    {
+        "name": "Cheksiz",
+        "price": "200 000",
+        "speed": "80",
+        "night_speed": "100",
+        "device_count": "12-15"
+    },
 ]
 
 logging.basicConfig(
@@ -126,7 +143,6 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(get_text(context, "welcome"), reply_markup=reply_markup)
     else:
         await update.callback_query.edit_message_text(get_text(context, "welcome"), reply_markup=reply_markup)
-    return SELECT_TARIFF
 
 
 
@@ -136,7 +152,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['language'] = context.user_data.get("language", "ru")
     context.user_data['chat_id'] = update.message.chat.id 
     await show_main_menu(update, context)
-    raise ApplicationHandlerStop()
+
 
 
 
@@ -159,15 +175,22 @@ async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await show_main_menu(update, context)
 
 
+from telegram import ReplyKeyboardMarkup
+
 async def tariffs_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # Display tariffs dynamically
-    keyboard = []
+    
     for idx, tariff in enumerate(TARIFFS_INFO):
-        tariff_text = f"{tariff['name']} - {tariff['price']} {get_text(context, 'currency')} ({tariff['speed']} {get_text(context, 'speed')})"
-        keyboard.append([InlineKeyboardButton(tariff_text, callback_data=f'tariff_{idx}')])
-    keyboard.append([InlineKeyboardButton(get_text(context, 'cancel'), callback_data='cancel')])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.callback_query.message.reply_text(get_text(context, 'tariffs'), reply_markup=reply_markup)
+        keyboard = []
+        tariff_text = f"{tariff['name']} - {tariff['price']} {get_text(context, 'currency')} \n {get_text(context,"devices")}:{tariff["device_count"]} \n {get_text(context, 'daySpeed')}:{tariff['speed']} {get_text(context, 'speed')} \n {get_text(context, 'nightSpeed')}:{tariff['speed']} {get_text(context, 'speed')}"
+        keyboard.append([InlineKeyboardButton(get_text(context, 'connect'), callback_data=f'tariff_{idx}')])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.message.reply_text(tariff_text, reply_markup=reply_markup)
+    keyboard2=[]
+    tariff_text2 = f"{get_text(context, 'cancel')}"
+    keyboard2.append([InlineKeyboardButton(get_text(context, 'connect'), callback_data='cancel')])
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    await update.callback_query.message.reply_text(tariff_text2, reply_markup=reply_markup2)
     return SELECT_TARIFF
 
 
@@ -177,7 +200,7 @@ async def connect_form(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Op
         return SELECT_TARIFF
     else:
         await tariffs_menu(update, context)
-        return 9999
+        return ENTER_NAME
 
 
 # Handler for selecting a tariff
@@ -230,11 +253,11 @@ async def enter_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         tariff_index = tariff.split("_")[1]
         tariffName = TARIFFS_INFO[int(tariff_index)].get("name")
         await update.message.reply_text(
-               f"{get_text(context,"yourDetails")}:\n"
-               f"{get_text(context,"tariff")}: {tariffName}\n"
-               f"{get_text(context,"name")}: {name}\n"
-               f"{get_text(context,"phone")}: {phone}\n"
-               f"{get_text(context,"ifEveryThingCorrect")}",
+               f"{get_text(context,'yourDetails')}:\n"
+               f"{get_text(context,'tariff')}: {tariffName}\n"
+               f"{get_text(context,'name')}: {name}\n"
+               f"{get_text(context,'phone')}: {phone}\n"
+               f"{get_text(context,'ifEveryThingCorrect')}",
                reply_markup=reply_markup
                )
         return CONFIRM_DETAILS
@@ -263,6 +286,7 @@ async def confirm_details(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                   f"Тариф: {tariffName}"  
         await update._bot.send_message(chat_id=group_chat_id, text=message)  
         await update.callback_query.message.reply_text(get_text(context,"youRequestSentSuccessfuly"))
+        await show_main_menu(update, context)
         return ConversationHandler.END
 
         # Perform HTTP request to the server
@@ -296,15 +320,21 @@ async def redirect_to_cinerama(update: Update, context: ContextTypes.DEFAULT_TYP
     # Create an inline keyboard button with the URL
     lang = context.user_data.get("language", "ru")
     keyboard = [[InlineKeyboardButton("Visit Cinerama", url=f"https://cinerama.uz/{lang}")]]
+    keyboard.append([InlineKeyboardButton(get_text(context, 'cancel'), callback_data='cancel')])
+
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     # Send a message with the inline keyboard
     await update.callback_query.edit_message_text("Click the button below to visit Cinerama:",
                                                   reply_markup=reply_markup)
-
+def disable_old_instances(token):
+    bot = Bot(token=token)
+    bot.delete_webhook()  # This removes any existing webhooks
+    print("Webhook removed, polling mode is now active.")
 
 # Main function to run the bot
 def handle_update():
+    disable_old_instances(TOKEN)
     application = ApplicationBuilder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(connect_form, pattern="^connect"))
